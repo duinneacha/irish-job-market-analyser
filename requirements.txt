@@ -1,0 +1,17 @@
+# Irish Job Market Analyser — Python dependencies
+
+# Web scraping
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.2.2
+
+# Data processing
+pandas==2.2.2
+numpy==1.26.4
+
+# Dashboard
+streamlit==1.37.0
+plotly==5.22.0
+
+# Utilities
+python-dotenv==1.0.1
