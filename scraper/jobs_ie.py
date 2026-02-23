@@ -36,16 +36,10 @@ class JobsIeScraper(BaseScraper):
             return []
 
         soup = BeautifulSoup(resp.text, "html.parser")
-        job_cards = soup.select("article.job, div.job-item, li.job-listing")
-
-        # Fallback: try broader selectors if specific ones find nothing
-        if not job_cards:
-            job_cards = soup.select("[data-job-id], .job-result, .search-result")
+        job_cards = soup.select('article[data-testid="job-item"]')
 
         if not job_cards:
-            # Last resort: look for any links to job detail pages
-            job_links = soup.select("a[href*='/jobs/']")
-            return self._parse_from_links(job_links)
+            return []
 
         results = []
         for card in job_cards:
@@ -56,11 +50,8 @@ class JobsIeScraper(BaseScraper):
 
     def _parse_card(self, card) -> dict | None:
         try:
-            # Title — try various selector patterns
-            title_el = (
-                card.select_one("h2 a, h3 a, .job-title a, a.title, [data-title]")
-                or card.select_one("h2, h3, .job-title")
-            )
+            # Title
+            title_el = card.select_one('[data-at="job-item-title"]')
             if not title_el:
                 return None
             title = self.clean_text(title_el.get_text())
@@ -68,26 +59,26 @@ class JobsIeScraper(BaseScraper):
                 return None
 
             # URL
-            link = title_el if title_el.name == "a" else title_el.find("a")
+            link = card.select_one('a[href*="/job/"]')
             href = link["href"] if link and link.get("href") else ""
             url = href if href.startswith("http") else f"{JOBS_IE_BASE}{href}"
 
             # Company
-            company_el = card.select_one(".company, .employer, [data-company], .job-company")
+            company_el = card.select_one('[data-at="job-item-company-name"]')
             company = self.clean_text(company_el.get_text()) if company_el else ""
 
             # Location
-            location_el = card.select_one(".location, [data-location], .job-location")
+            location_el = card.select_one('[data-at="job-item-location"]')
             location_raw = self.clean_text(location_el.get_text()) if location_el else ""
             location_norm = self.normalise_location(location_raw)
 
             # Salary
-            salary_el = card.select_one(".salary, [data-salary], .job-salary")
+            salary_el = card.select_one('[data-at="job-item-salary-info"]')
             salary_raw = self.clean_text(salary_el.get_text()) if salary_el else ""
             salary_min, salary_max = self.parse_salary(salary_raw)
 
             # Description snippet
-            desc_el = card.select_one(".description, .job-description, .snippet, p")
+            desc_el = card.select_one('[data-at="jobcard-content"]')
             description = self.clean_text(desc_el.get_text()) if desc_el else ""
 
             return {
@@ -108,32 +99,3 @@ class JobsIeScraper(BaseScraper):
             print(f"[jobs.ie] Parse error: {e}")
             self._errors += 1
             return None
-
-    def _parse_from_links(self, links: list) -> list[dict]:
-        """Minimal fallback: extract title and URL from bare anchor tags."""
-        results = []
-        seen = set()
-        for link in links:
-            href = link.get("href", "")
-            if not href or href in seen:
-                continue
-            url = href if href.startswith("http") else f"{JOBS_IE_BASE}{href}"
-            seen.add(href)
-            title = self.clean_text(link.get_text())
-            if not title or len(title) < 5:
-                continue
-            results.append({
-                "source": self.SOURCE_NAME,
-                "external_id": self.make_external_id(url),
-                "title": title,
-                "company": "",
-                "location_raw": "",
-                "location_norm": "Unknown",
-                "salary_raw": "",
-                "salary_min": None,
-                "salary_max": None,
-                "description": "",
-                "url": url,
-                "posted_date": self.today_iso(),
-            })
-        return results

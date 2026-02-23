@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from scraper.base import BaseScraper
-from config import IRISHJOBS_BASE, IRISHJOBS_SEARCH, IRISHJOBS_PARAMS
+from config import IRISHJOBS_BASE, IRISHJOBS_SEARCH
 
 
 class IrishJobsScraper(BaseScraper):
@@ -30,36 +30,28 @@ class IrishJobsScraper(BaseScraper):
         return jobs
 
     def _scrape_page(self, page: int) -> list[dict]:
-        params = {**IRISHJOBS_PARAMS, "Page": page}
+        params = {"page": page} if page > 1 else {}
         resp = self.get(IRISHJOBS_SEARCH, params=params)
         if not resp:
             return []
 
         soup = BeautifulSoup(resp.text, "html.parser")
+        job_cards = soup.select('article[data-testid="job-item"]')
 
-        # IrishJobs uses a table-style layout
-        job_rows = soup.select("tr.searchResultHeader, div.job_header, .job-result-card")
-
-        if not job_rows:
-            # Broader fallback
-            job_rows = soup.select(".job-item, article.job, .resultRow")
-
-        if not job_rows:
+        if not job_cards:
             return []
 
         results = []
-        for row in job_rows:
-            job = self._parse_row(row)
+        for card in job_cards:
+            job = self._parse_card(card)
             if job:
                 results.append(job)
         return results
 
-    def _parse_row(self, row) -> dict | None:
+    def _parse_card(self, card) -> dict | None:
         try:
             # Title
-            title_el = row.select_one(
-                "a.jobTitle, h3 a, .job-title a, td.jobTitle a, a[id*='JobTitle']"
-            )
+            title_el = card.select_one('[data-at="job-item-title"]')
             if not title_el:
                 return None
             title = self.clean_text(title_el.get_text())
@@ -67,38 +59,27 @@ class IrishJobsScraper(BaseScraper):
                 return None
 
             # URL
-            href = title_el.get("href", "")
+            link = card.select_one('a[href*="/job/"]')
+            href = link["href"] if link and link.get("href") else ""
             url = href if href.startswith("http") else f"{IRISHJOBS_BASE}{href}"
 
             # Company
-            company_el = row.select_one(
-                ".company, td.company, span.company, a[id*='Company'], .job-company"
-            )
+            company_el = card.select_one('[data-at="job-item-company-name"]')
             company = self.clean_text(company_el.get_text()) if company_el else ""
 
             # Location
-            location_el = row.select_one(
-                ".location, td.location, span.location, [id*='Location'], .job-location"
-            )
+            location_el = card.select_one('[data-at="job-item-location"]')
             location_raw = self.clean_text(location_el.get_text()) if location_el else ""
             location_norm = self.normalise_location(location_raw)
 
             # Salary
-            salary_el = row.select_one(
-                ".salary, td.salary, span.salary, [id*='Salary'], .job-salary"
-            )
+            salary_el = card.select_one('[data-at="job-item-salary-info"]')
             salary_raw = self.clean_text(salary_el.get_text()) if salary_el else ""
             salary_min, salary_max = self.parse_salary(salary_raw)
 
             # Description
-            desc_el = row.select_one(".description, .job-description, p.description, .snippet")
+            desc_el = card.select_one('[data-at="jobcard-content"]')
             description = self.clean_text(desc_el.get_text()) if desc_el else ""
-
-            # Date posted
-            date_el = row.select_one(".date, .posted, [id*='Date'], td.date")
-            posted_date = self.clean_text(date_el.get_text()) if date_el else self.today_iso()
-            # Normalise to ISO if it looks like a relative date ("Today", "Yesterday")
-            posted_date = self._normalise_date(posted_date)
 
             return {
                 "source": self.SOURCE_NAME,
@@ -112,26 +93,9 @@ class IrishJobsScraper(BaseScraper):
                 "salary_max": salary_max,
                 "description": description,
                 "url": url,
-                "posted_date": posted_date,
+                "posted_date": self.today_iso(),
             }
         except Exception as e:
             print(f"[irishjobs.ie] Parse error: {e}")
             self._errors += 1
             return None
-
-    def _normalise_date(self, raw: str) -> str:
-        """Convert relative date strings to ISO date."""
-        from datetime import datetime, timedelta, timezone
-        today = datetime.now(timezone.utc).date()
-        raw_lower = raw.lower().strip()
-        if "today" in raw_lower:
-            return today.isoformat()
-        if "yesterday" in raw_lower:
-            return (today - timedelta(days=1)).isoformat()
-        # Try to parse actual dates
-        for fmt in ["%d/%m/%Y", "%d %b %Y", "%Y-%m-%d", "%d-%m-%Y"]:
-            try:
-                return datetime.strptime(raw.strip(), fmt).date().isoformat()
-            except ValueError:
-                continue
-        return today.isoformat()

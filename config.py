@@ -6,14 +6,7 @@ JOBS_IE_BASE = "https://www.jobs.ie"
 JOBS_IE_SEARCH = "https://www.jobs.ie/jobs/it/"
 
 IRISHJOBS_BASE = "https://www.irishjobs.ie"
-IRISHJOBS_SEARCH = "https://www.irishjobs.ie/ShowResults.aspx"
-IRISHJOBS_PARAMS = {
-    "Keywords": "",
-    "Location": "101",   # Ireland
-    "Category": "37",    # IT
-    "Recruiter": "Company",
-    "SortType": "date",
-}
+IRISHJOBS_SEARCH = "https://www.irishjobs.ie/jobs/it"
 
 # ── Request headers (polite scraping) ─────────────────────────────────────────
 HEADERS = {
